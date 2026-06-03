@@ -49,11 +49,14 @@ echo "🍏 Starting Encrypted iOS Payload Execution..."
 
 REPO_ROOT="$(pwd)"
 
-# 0. Pin Xcode 16.2 (proven). Fall back to newest installed if 16.2 is absent.
-if [ -d "/Applications/Xcode_16.2.app" ]; then
-  sudo xcode-select -s "/Applications/Xcode_16.2.app"
+# 0. Select Xcode 26+. Apple now REJECTS App Store uploads built with an older
+# SDK: "All iOS apps must be built with the iOS 26 SDK or later (Xcode 26+)".
+# macos-15 runners ship both Xcode 16.x and 26.x, so pick the newest 26.x.
+XCODE_26=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+if [ -n "$XCODE_26" ]; then
+  sudo xcode-select -s "$XCODE_26"
 else
-  echo "⚠️ Xcode_16.2 not found; selecting newest installed Xcode."
+  echo "⚠️ No Xcode 26 found; selecting newest installed Xcode."
   sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)" || true
 fi
 echo "Using Xcode: $(xcodebuild -version | head -1)"
@@ -133,11 +136,24 @@ npx cap add ios || true
 # pod requires. Without this, pod install fails with "could not find compatible
 # versions for pod Capacitor ... required a higher minimum deployment target".
 if [ -f "$REPO_ROOT/ios/App/Podfile" ]; then
-  sed -i '' -e "s/platform :ios, '[0-9.]*'/platform :ios, '14.0'/" "$REPO_ROOT/ios/App/Podfile"
-  echo "📱 Podfile deployment target pinned to iOS 14.0"
+  sed -i '' -e "s/platform :ios, '[0-9.]*'/platform :ios, '16.0'/" "$REPO_ROOT/ios/App/Podfile"
+  echo "📱 Podfile deployment target pinned to iOS 16.0"
 fi
 
 npx cap sync ios || true
+
+# Set the App target's bundle id + deployment target directly in the Xcode
+# project (App.xcodeproj only contains the App target — Pods live in a separate
+# Pods.xcodeproj). Doing it here, instead of passing PRODUCT_BUNDLE_IDENTIFIER on
+# the xcodebuild command line, prevents the id from leaking into CocoaPods
+# resource bundles, which caused an App Store "CFBundleIdentifier Collision".
+PBXPROJ="$REPO_ROOT/ios/App/App.xcodeproj/project.pbxproj"
+if [ -f "$PBXPROJ" ]; then
+  sed -i '' -e "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = $PACKAGE_ID;/g" "$PBXPROJ"
+  sed -i '' -e "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 16.0;/g" "$PBXPROJ"
+  echo "📱 App target bundle id set to $PACKAGE_ID (deployment target 16.0)"
+  echo "   pbxproj bundle ids now:"; grep "PRODUCT_BUNDLE_IDENTIFIER" "$PBXPROJ" | sort -u
+fi
 
 # --- AUTO-INCREMENT BUILD NUMBER (TestFlight requires a unique value) ---
 BUILD_NUMBER=$(date +"%s")
@@ -147,7 +163,7 @@ echo "Build Number: $BUILD_NUMBER"
 echo "📦 Installing CocoaPods..."
 cd "$REPO_ROOT/ios/App"
 # Re-assert the deployment target in case `cap sync` regenerated the Podfile.
-sed -i '' -e "s/platform :ios, '[0-9.]*'/platform :ios, '14.0'/" Podfile || true
+sed -i '' -e "s/platform :ios, '[0-9.]*'/platform :ios, '16.0'/" Podfile || true
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 pod install || pod install --repo-update
@@ -184,7 +200,6 @@ xcodebuild archive \
   -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE_PATH" \
   DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-  PRODUCT_BUNDLE_IDENTIFIER="$PACKAGE_ID" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
