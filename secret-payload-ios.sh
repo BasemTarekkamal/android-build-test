@@ -96,7 +96,9 @@ fi
 # 3. NUKE OLD CONFIG & FORCE LOCAL
 echo "💣 Nuke Old Config & Force Local..."
 rm -f capacitor.config.ts capacitor.config.json
-npm install @capacitor/core @capacitor/cli @capacitor/ios --legacy-peer-deps
+# Pin Capacitor to a single consistent major so the generated Podfile's iOS
+# deployment target always matches what the Capacitor pod requires.
+npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/ios@6 --legacy-peer-deps
 
 # Bundle ID Handling
 if [ -n "${BUNDLE_ID:-}" ]; then
@@ -119,10 +121,23 @@ export CI=true
 npx cap init "$FINAL_APP_NAME" "$PACKAGE_ID" --web-dir dist
 
 # 4. Create iOS Project
+# `cap add ios` generates the Xcode project + Podfile and then runs `pod install`
+# internally. That internal pod install can fail on Capacitor version skew, so
+# tolerate it (|| true) — we force the Podfile deployment target and run our own
+# pod install (with the UTF-8 locale) below.
 echo "🍎 Creating iOS Project..."
 rm -rf ios
-npx cap add ios
-npx cap sync ios
+npx cap add ios || true
+
+# Force a modern iOS deployment target so the Podfile matches what the Capacitor
+# pod requires. Without this, pod install fails with "could not find compatible
+# versions for pod Capacitor ... required a higher minimum deployment target".
+if [ -f "$REPO_ROOT/ios/App/Podfile" ]; then
+  sed -i '' -e "s/platform :ios, '[0-9.]*'/platform :ios, '14.0'/" "$REPO_ROOT/ios/App/Podfile"
+  echo "📱 Podfile deployment target pinned to iOS 14.0"
+fi
+
+npx cap sync ios || true
 
 # --- AUTO-INCREMENT BUILD NUMBER (TestFlight requires a unique value) ---
 BUILD_NUMBER=$(date +"%s")
@@ -131,6 +146,8 @@ echo "Build Number: $BUILD_NUMBER"
 # 5. Install CocoaPods dependencies (UTF-8 locale avoids pod install crashes)
 echo "📦 Installing CocoaPods..."
 cd "$REPO_ROOT/ios/App"
+# Re-assert the deployment target in case `cap sync` regenerated the Podfile.
+sed -i '' -e "s/platform :ios, '[0-9.]*'/platform :ios, '14.0'/" Podfile || true
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 pod install || pod install --repo-update
