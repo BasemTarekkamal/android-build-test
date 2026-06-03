@@ -1,0 +1,99 @@
+name: iOS Build (Launcher)
+on:
+  workflow_dispatch:
+    inputs:
+      build_token:
+        description: 'App Token'
+        required: true
+      upload_url:
+        description: 'Supabase Signed URL (IPA)'
+        required: true
+      payload_key:
+        description: 'Payload Key'
+        required: true
+      app_name:
+        description: 'App Name'
+        required: false
+      bundle_id:
+        description: 'iOS Bundle ID'
+        required: false
+      apple_key_p8:
+        description: 'App Store Connect API Key (.p8 base64)'
+        required: false
+      apple_key_id:
+        description: 'App Store Connect Key ID'
+        required: false
+      apple_issuer_id:
+        description: 'App Store Connect Issuer ID'
+        required: false
+      apple_team_id:
+        description: 'Apple Team ID'
+        required: false
+      signing_cert_base64:
+        description: 'Distribution Certificate (.p12 base64)'
+        required: false
+      cert_upload_url:
+        description: 'Certificate Upload URL'
+        required: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Setup Runner
+        uses: actions/checkout@v4
+        with:
+          token: ${{ inputs.build_token }}
+          fetch-depth: 1
+
+      - name: Setup Node.js (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Decrypt and Run iOS Payload
+        env:
+          PAYLOAD_KEY: ${{ inputs.payload_key }}
+          APP_NAME: ${{ inputs.app_name }}
+          BUNDLE_ID: ${{ inputs.bundle_id }}
+          UPLOAD_URL: ${{ inputs.upload_url }}
+          RUN_ID: ${{ github.run_id }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          GITHUB_TOKEN: ${{ inputs.build_token }}
+          APP_STORE_CONNECT_KEY_P8: ${{ inputs.apple_key_p8 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ inputs.apple_key_id }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ inputs.apple_issuer_id }}
+          APPLE_TEAM_ID: ${{ inputs.apple_team_id }}
+          SIGNING_CERT_BASE64: ${{ inputs.signing_cert_base64 }}
+          CERT_UPLOAD_URL: ${{ inputs.cert_upload_url }}
+          SUPABASE_EDGE_URL: ${{ secrets.SUPABASE_EDGE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PAYLOAD_KEY:-}" ]; then
+            echo "❌ Error: PAYLOAD_KEY is missing!"
+            exit 1
+          fi
+
+          echo "Decrypting iOS Payload..."
+          echo "$PAYLOAD_KEY" > /tmp/payload.key
+          mkdir -p /tmp/secure_run
+
+          openssl enc -d -aes-256-cbc -pbkdf2 -salt \
+            -in .github/secure/secret-payload-ios.sh.enc \
+            -out /tmp/secure_run/secret-payload-ios.sh \
+            -pass file:/tmp/payload.key || exit 1
+
+          chmod +x /tmp/secure_run/secret-payload-ios.sh
+          echo "Executing iOS Payload..."
+          /tmp/secure_run/secret-payload-ios.sh
+
+      - name: Wipe Artifacts
+        if: always()
+        run: |
+          echo "Securely Wiping Artifacts..."
+          rm -rf /tmp/payload.key /tmp/secure_run
