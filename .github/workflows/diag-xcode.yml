@@ -1,0 +1,30 @@
+name: Diag Xcode/SDK
+on:
+  workflow_dispatch: {}
+
+jobs:
+  on-15:
+    runs-on: macos-15
+    steps:
+      - name: List Xcodes + SDKs (macos-15)
+        run: |
+          echo "===== RUNNER: macos-15 ====="
+          echo "--- /Applications/Xcode*.app ---"
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          echo "--- selected ---"
+          xcodebuild -version || true
+          echo "--- iphoneos SDKs ---"
+          xcodebuild -showsdks 2>/dev/null | grep -i iphoneos || true
+
+  on-26:
+    runs-on: macos-26
+    steps:
+      - name: List Xcodes + SDKs (macos-26)
+        run: |
+          echo "===== RUNNER: macos-26 ====="
+          echo "--- /Applications/Xcode*.app ---"
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          echo "--- selected ---"
+          xcodebuild -version || true
+          echo "--- iphoneos SDKs ---"
+          xcodebuild -showsdks 2>/dev/null | grep -i iphoneos || true
