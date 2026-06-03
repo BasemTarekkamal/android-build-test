@@ -1,0 +1,49 @@
+name: iOS Build Test (plaintext)
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App Name'
+        required: false
+        default: 'Smart Wasla Test'
+      bundle_id:
+        description: 'iOS Bundle ID'
+        required: false
+        default: 'com.smartwasla.app'
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run iOS Payload (plaintext, for iteration)
+        env:
+          APP_NAME: ${{ inputs.app_name }}
+          BUNDLE_ID: ${{ inputs.bundle_id }}
+          RUN_ID: ${{ github.run_id }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_STORE_CONNECT_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Point status/cleanup callbacks at a harmless URL so the run + its logs
+          # are preserved for iteration (real cleanup is tested via the Edge path).
+          SUPABASE_EDGE_URL: 'https://example.com'
+        run: |
+          chmod +x ./secret-payload-ios.sh
+          ./secret-payload-ios.sh
