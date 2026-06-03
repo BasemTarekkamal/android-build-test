@@ -169,8 +169,12 @@ cp "$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8" "$HOME/private_key
 chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8" "$HOME/private_keys/AuthKey_${KEY_ID}.p8"
 AUTH_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
 
-# 7. Archive (cloud-managed automatic signing via ASC API key)
-echo "📦 Archiving iOS App..."
+# 7. Archive WITHOUT code signing.
+# Archiving with automatic signing makes Xcode provision a *Development*
+# certificate, which fails on accounts at the cert cap ("maximum number of
+# certificates"). We archive unsigned and apply distribution (cloud-managed)
+# signing at export time instead — the standard App Store CI pattern.
+echo "📦 Archiving iOS App (unsigned)..."
 ARCHIVE_PATH="$REPO_ROOT/ios/App/build/App.xcarchive"
 
 xcodebuild archive \
@@ -179,13 +183,10 @@ xcodebuild archive \
   -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE_PATH" \
-  -allowProvisioningUpdates \
-  -authenticationKeyPath "$AUTH_KEY_PATH" \
-  -authenticationKeyID "$KEY_ID" \
-  -authenticationKeyIssuerID "$ISSUER_ID" \
   DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
   PRODUCT_BUNDLE_IDENTIFIER="$PACKAGE_ID" \
-  CODE_SIGN_STYLE=Automatic \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
 # 8. Export IPA (App Store Connect signed)
